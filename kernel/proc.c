@@ -347,10 +347,7 @@ void
 exit(int status,char* exit_msg)
 {
   struct proc *p = myproc();
-  printf("%s",exit_msg);
-  safestrcpy(p->exit_msg, exit_msg, sizeof(exit_msg));
-  printf("%s",exit_msg);
-
+  safestrcpy(p->exit_msg, exit_msg, sizeof(p->exit_msg));
   if(p == initproc)
     panic("init exiting");
 
@@ -396,8 +393,6 @@ wait(uint64 addr,uint64 cp)
   struct proc *pp;
   int havekids, pid;
   struct proc *p = myproc();
-  copyout(p->pagetable,cp,p->exit_msg,strlen(p->exit_msg));
-  printf("%s",p->exit_msg);
 
   acquire(&wait_lock);
 
@@ -419,6 +414,7 @@ wait(uint64 addr,uint64 cp)
             release(&wait_lock);
             return -1;
           }
+          copyout(p->pagetable,cp,pp->exit_msg,strlen(pp->exit_msg));
           freeproc(pp);
           release(&pp->lock);
           release(&wait_lock);
