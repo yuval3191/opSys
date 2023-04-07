@@ -25,13 +25,6 @@ extern char trampoline[]; // trampoline.S
 // memory model when using p->parent.
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
-
-void init_acc_fields(struct proc *p)
-{
-  long long acc = calc_min_acc();
-  p->accumulator = acc;
-}
-
 long long calc_min_acc()
 {
   long long acc = 0;
@@ -45,6 +38,13 @@ long long calc_min_acc()
   }
   return acc;
 }
+void init_acc_fields(struct proc *p)
+{
+  long long acc = calc_min_acc();
+  p->accumulator = acc;
+}
+
+
 
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
@@ -147,7 +147,7 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
-  
+
   p->accumulator = acc;
   p->ps_priority = NEW_PROCESS_PRIORIEY;
 
@@ -461,20 +461,26 @@ wait(uint64 addr,uint64 cp)
   }
 }
 
+
+
+
+
 void
-priority_scheduler(void)
+scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
-  
+  long long min_acc;
+
   c->proc = 0;
+
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
-
+    min_acc = calc_min_acc();
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
-      if(p->state == RUNNABLE) {
+      if(p->state == RUNNABLE && p->accumulator == min_acc) {
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
@@ -499,7 +505,7 @@ priority_scheduler(void)
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
 void
-scheduler(void)
+scheduler2(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
@@ -657,7 +663,7 @@ kill(int pid)
       release(&p->lock);
       return 0;
     }
-    release(&p->lock);
+    release(&p->lock);  
   }
   return -1;
 }

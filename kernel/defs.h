@@ -83,6 +83,7 @@ void            printfinit(void);
 
 // proc.c
 int             cpuid(void);
+void            set_ps_priority(int);
 void            exit(int,char*);
 int             fork(void);
 int             growproc(int);
