@@ -1,4 +1,6 @@
 // Saved registers for kernel context switches.
+
+#define NEW_PROCESS_PRIORIEY 5
 struct context {
   uint64 ra;
   uint64 sp;
@@ -91,6 +93,9 @@ struct proc {
   int killed;                  // If non-zero, have been killed
   int xstate;                  // Exit status to be returned to parent's wait
   int pid;                     // Process ID
+
+  long long accumulator;
+  int ps_priority;
 
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process
