@@ -26,6 +26,26 @@ extern char trampoline[]; // trampoline.S
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
 
+void init_acc_fields(struct proc *p)
+{
+  long long acc = calc_min_acc();
+  p->accumulator = acc;
+}
+
+long long calc_min_acc()
+{
+  long long acc = 0;
+  struct proc *p;
+  
+  for(p = proc; p < &proc[NPROC]; p++) {
+    if(p->state == RUNNABLE ||p->state == RUNNING) {
+      if (acc > p->accumulator)
+        acc = p->accumulator;
+    }
+  }
+  return acc;
+}
+
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
 // guard page.
@@ -110,6 +130,9 @@ static struct proc*
 allocproc(void)
 {
   struct proc *p;
+  long long acc;
+
+  acc = calc_min_acc();
 
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
@@ -124,6 +147,9 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  
+  p->accumulator = acc;
+  p->ps_priority = NEW_PROCESS_PRIORIEY;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -435,6 +461,36 @@ wait(uint64 addr,uint64 cp)
   }
 }
 
+void
+priority_scheduler(void)
+{
+  struct proc *p;
+  struct cpu *c = mycpu();
+  
+  c->proc = 0;
+  for(;;){
+    // Avoid deadlock by ensuring that devices can interrupt.
+    intr_on();
+
+    for(p = proc; p < &proc[NPROC]; p++) {
+      acquire(&p->lock);
+      if(p->state == RUNNABLE) {
+        // Switch to chosen process.  It is the process's job
+        // to release its lock and then reacquire it
+        // before jumping back to us.
+        p->state = RUNNING;
+        c->proc = p;
+        swtch(&c->context, &p->context);
+
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
+        c->proc = 0;
+      }
+      release(&p->lock);
+    }
+  }
+}
+
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
 // Scheduler never returns.  It loops, doing:
@@ -574,6 +630,7 @@ wakeup(void *chan)
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
         p->state = RUNNABLE;
+        init_acc_fields(p);
       }
       release(&p->lock);
     }
@@ -595,6 +652,7 @@ kill(int pid)
       if(p->state == SLEEPING){
         // Wake process from sleep().
         p->state = RUNNABLE;
+        init_acc_fields(p); //needed?
       }
       release(&p->lock);
       return 0;
@@ -681,4 +739,17 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+void set_ps_priority(int n)
+{
+  struct proc *p = myproc();
+  acquire(&p->lock);
+  if (n > 10)
+    p->ps_priority = 10;
+  else if (n < 1)
+    p->ps_priority = 1;
+  else
+    p->ps_priority = n;
+  release(&p->lock);
 }

@@ -30,6 +30,15 @@ sys_memsize(void)
 }
 
 uint64
+sys_set_ps_priority(void)
+{
+  int n;
+  argint(0, &n);
+  set_ps_priority(n);
+  return 0;
+}
+
+uint64
 sys_fork(void)
 {
   return fork();
