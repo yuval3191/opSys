@@ -26,12 +26,6 @@ extern char trampoline[]; // trampoline.S
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
 
-void init_acc_fields(struct proc *p)
-{
-  long long acc = calc_min_acc();
-  p->accumulator = acc;
-}
-
 long long calc_min_acc()
 {
   long long acc = 0;
@@ -44,6 +38,12 @@ long long calc_min_acc()
     }
   }
   return acc;
+}
+
+void init_acc_fields(struct proc *p)
+{
+  long long acc = calc_min_acc();
+  p->accumulator = acc;
 }
 
 // Allocate a page for each process's kernel stack.

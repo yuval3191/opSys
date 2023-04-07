@@ -8,6 +8,8 @@
         "exception": "c",
         "new": "c",
         "proc.h": "c",
-        "cstdlib": "c"
+        "cstdlib": "c",
+        "spinlock.h": "c",
+        "param.h": "c"
     },
 }
