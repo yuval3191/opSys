@@ -39,6 +39,33 @@ sys_set_ps_priority(void)
 }
 
 uint64
+sys_set_cfs_priority(void)
+{
+  int n;
+  argint(0, &n);
+  return set_cfs_priority(n);
+}
+
+uint64
+sys_get_cfs_priority(void)
+{
+  int pid;
+  uint64 rtime;
+  uint64 retime;
+  uint64 stime;
+  uint64 cfsPriority;
+
+
+  argint(0, &pid);
+  argaddr(1, &rtime);
+  argaddr(2, &stime);
+  argaddr(3, &retime);
+  argaddr(4, &cfsPriority);
+  get_cfs_priority(pid,&rtime,&stime,&retime,&cfsPriority);
+  return 0;
+}
+
+uint64
 sys_fork(void)
 {
   return fork();

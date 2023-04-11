@@ -1,6 +1,11 @@
 // Saved registers for kernel context switches.
 
 #define NEW_PROCESS_PRIORIEY 5
+#define HIGH_PRIORITY 75
+#define NORMAL_PRIORITY 100
+#define LOW_PRIORITY 125
+
+
 struct context {
   uint64 ra;
   uint64 sp;

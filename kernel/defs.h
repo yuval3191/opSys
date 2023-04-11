@@ -84,7 +84,9 @@ void            printfinit(void);
 // proc.c
 int             cpuid(void);
 void            exit(int,char*);
+void            get_cfs_priority(int,uint64*,uint64*,uint64*,uint64*);
 void            set_ps_priority(int);
+int             set_cfs_priority(int);
 int             fork(void);
 int             growproc(int);
 void            proc_mapstacks(pagetable_t);
@@ -148,6 +150,7 @@ void            trapinit(void);
 void            trapinithart(void);
 extern struct spinlock tickslock;
 void            usertrapret(void);
+void            updateFieldsCFS(void);
 
 // uart.c
 void            uartinit(void);
