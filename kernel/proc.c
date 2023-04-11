@@ -6,6 +6,10 @@
 #include "proc.h"
 #include "defs.h"
 
+#define LLONG_MAX __LONG_LONG_MAX__
+#define INT_MAX __INT16_MAX__
+
+
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -26,15 +30,55 @@ extern char trampoline[]; // trampoline.S
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
 
-void init_acc_fields(struct proc *p)
+void updateFieldsCFS()
 {
-  long long acc = calc_min_acc();
-  p->accumulator = acc;
+  struct proc *p;
+  
+  printf("entered update\n");
+  for(p = proc; p < &proc[NPROC]; p++) 
+  {
+    acquire(&p->lock);
+    if (p->state == RUNNABLE)
+      p->retime++;
+    else if (p->state == RUNNING)
+      p->rtime++;
+    else if(p->state == SLEEPING)
+      p->stime++;
+    release(&p->lock);
+  }
+}
+
+struct proc* calc_min_vrunTime()
+{
+  int vrunTime = INT_MAX;
+  int curRuntime;
+  int sumOfRun;
+  struct proc *p;
+  struct proc *minP = 0;
+
+  // printf("enter calc min vrun\n");
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    curRuntime = INT_MAX;
+    if(p->state == RUNNABLE ||p->state == RUNNING) {
+      // printf("calc min vrun!!\n");
+      sumOfRun = p->retime + p->rtime + p->stime;
+      // printf("sum of run is:%d\n",sumOfRun);
+      if (sumOfRun != 0)
+        curRuntime = p->cfs_priority * (p->rtime / sumOfRun);
+      if (curRuntime < vrunTime){
+        vrunTime = curRuntime;
+        minP = p;
+      }
+    }
+    release(&p->lock);
+  }
+  return minP;
 }
 
 long long calc_min_acc()
 {
-  long long acc = 0;
+  long long acc = LLONG_MAX;
   struct proc *p;
   
   for(p = proc; p < &proc[NPROC]; p++) {
@@ -44,6 +88,15 @@ long long calc_min_acc()
     }
   }
   return acc;
+}
+
+void init_acc_fields(struct proc *p)
+{
+  long long acc = calc_min_acc();
+  if (acc == LLONG_MAX)
+    p->accumulator = 0;
+  else
+    p->accumulator = acc;
 }
 
 // Allocate a page for each process's kernel stack.
@@ -130,9 +183,6 @@ static struct proc*
 allocproc(void)
 {
   struct proc *p;
-  long long acc;
-
-  acc = calc_min_acc();
 
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
@@ -148,7 +198,7 @@ found:
   p->pid = allocpid();
   p->state = USED;
   
-  p->accumulator = acc;
+  init_acc_fields(p);
   p->ps_priority = NEW_PROCESS_PRIORIEY;
 
   // Allocate a trapframe page.
@@ -195,6 +245,10 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+
+  p->accumulator = 0;
+  p->ps_priority = 0;
+  p->exit_msg[0] = 0;
 }
 
 // Create a user page table for a given process, with no user memory,
@@ -276,6 +330,7 @@ userinit(void)
   p->cwd = namei("/");
 
   p->state = RUNNABLE;
+  p->cfs_priority = NORMAL_PRIORITY;
 
   release(&p->lock);
 }
@@ -327,6 +382,9 @@ fork(void)
 
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
+
+  //init np CFS fields
+  np->cfs_priority = p->cfs_priority;
 
   // increment reference counts on open file descriptors.
   for(i = 0; i < NOFILE; i++)
@@ -462,7 +520,7 @@ wait(uint64 addr,uint64 cp)
 }
 
 void
-priority_scheduler(void)
+scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
@@ -472,9 +530,30 @@ priority_scheduler(void)
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
 
+    p = calc_min_vrunTime();
+    if (p != 0){
+      p->state = RUNNING;
+      c->proc = p;
+      swtch(&c->context, &p->context);
+      c->proc = 0;
+    }
+  }
+}
+
+void
+scheduler_ps(void)
+{
+  struct proc *p;
+  struct cpu *c = mycpu();
+  
+  c->proc = 0;
+  for(;;){
+    // Avoid deadlock by ensuring that devices can interrupt.
+    intr_on();
+    long long acc = calc_min_acc();
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
-      if(p->state == RUNNABLE) {
+      if(p->state == RUNNABLE && p->accumulator == acc) {
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
@@ -499,7 +578,7 @@ priority_scheduler(void)
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
 void
-scheduler(void)
+scheduler_old(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
@@ -741,6 +820,22 @@ procdump(void)
   }
 }
 
+void get_cfs_priority(int pid,uint64* rtime,uint64* stime,uint64* retime,uint64* cfsPriority)
+{
+    struct proc *p;
+
+    for(p = proc; p < &proc[NPROC]; p++){
+      acquire(&p->lock);
+      if (p->pid == pid){
+        *rtime = p->rtime;
+        *stime = p->stime;
+        *retime = p->retime;
+        *cfsPriority = p->cfs_priority;
+      }
+      release(&p->lock);
+    }
+}
+
 void set_ps_priority(int n)
 {
   struct proc *p = myproc();
@@ -752,4 +847,24 @@ void set_ps_priority(int n)
   else
     p->ps_priority = n;
   release(&p->lock);
+}
+
+int set_cfs_priority(int n)
+{
+  struct proc *p = myproc();
+  acquire(&p->lock);
+  if (n == 0)
+    p->cfs_priority = HIGH_PRIORITY;
+  else if (n == 1)
+    p->cfs_priority = NORMAL_PRIORITY;
+  else if (n == 2)
+    p->cfs_priority = LOW_PRIORITY;
+  else{
+    release(&p->lock);
+    return -1;
+  }
+  release(&p->lock);
+  return 0;
+    
+
 }

@@ -1,6 +1,11 @@
 // Saved registers for kernel context switches.
 
 #define NEW_PROCESS_PRIORIEY 5
+#define HIGH_PRIORITY 75
+#define NORMAL_PRIORITY 100
+#define LOW_PRIORITY 125
+
+
 struct context {
   uint64 ra;
   uint64 sp;
@@ -94,8 +99,15 @@ struct proc {
   int xstate;                  // Exit status to be returned to parent's wait
   int pid;                     // Process ID
 
+/*-----schedualing stuff ------*/
   long long accumulator;
   int ps_priority;
+  int cfs_priority;
+  int rtime;
+  int stime;
+  int retime;
+  
+/*----------end----------------*/
 
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process
