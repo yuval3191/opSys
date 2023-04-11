@@ -84,7 +84,7 @@ void            printfinit(void);
 // proc.c
 int             cpuid(void);
 void            exit(int,char*);
-void            get_cfs_priority(int,uint64*,uint64*,uint64*,uint64*);
+void            get_cfs_priority(int,uint64,uint64,uint64,uint64);
 void            set_ps_priority(int);
 int             set_cfs_priority(int);
 int             fork(void);

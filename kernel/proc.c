@@ -33,47 +33,44 @@ struct spinlock wait_lock;
 void updateFieldsCFS()
 {
   struct proc *p;
-  
-  printf("entered update\n");
+  int changeFlag;
   for(p = proc; p < &proc[NPROC]; p++) 
   {
-    acquire(&p->lock);
-    if (p->state == RUNNABLE)
+    changeFlag = 0;
+    if (p->state == RUNNABLE){
       p->retime++;
-    else if (p->state == RUNNING)
+      changeFlag = 1;
+    }
+    else if (p->state == RUNNING){
       p->rtime++;
-    else if(p->state == SLEEPING)
+      changeFlag = 1;
+    }
+    else if(p->state == SLEEPING){
       p->stime++;
-    release(&p->lock);
+      changeFlag = 1;
+    }
+    if (changeFlag == 1){
+      p->vtime = p->cfs_priority * (p->rtime / (p->rtime + p->stime + p->retime));
+      // printf("the vtime has change to: %d\n",p->vtime);
+    }
+
   }
 }
 
-struct proc* calc_min_vrunTime()
+int calc_min_vrunTime()
 {
   int vrunTime = INT_MAX;
-  int curRuntime;
-  int sumOfRun;
   struct proc *p;
-  struct proc *minP = 0;
 
   // printf("enter calc min vrun\n");
   for(p = proc; p < &proc[NPROC]; p++) {
-    acquire(&p->lock);
-    curRuntime = INT_MAX;
-    if(p->state == RUNNABLE ||p->state == RUNNING) {
-      // printf("calc min vrun!!\n");
-      sumOfRun = p->retime + p->rtime + p->stime;
-      // printf("sum of run is:%d\n",sumOfRun);
-      if (sumOfRun != 0)
-        curRuntime = p->cfs_priority * (p->rtime / sumOfRun);
-      if (curRuntime < vrunTime){
-        vrunTime = curRuntime;
-        minP = p;
+    if(p->state == RUNNABLE) {
+      if (p->vtime < vrunTime){
+        vrunTime = p->vtime;
       }
     }
-    release(&p->lock);
   }
-  return minP;
+  return vrunTime;
 }
 
 long long calc_min_acc()
@@ -331,6 +328,7 @@ userinit(void)
 
   p->state = RUNNABLE;
   p->cfs_priority = NORMAL_PRIORITY;
+  p->retime = 1;
 
   release(&p->lock);
 }
@@ -529,13 +527,24 @@ scheduler(void)
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
+    int minVtime = calc_min_vrunTime();
+    for(p = proc; p < &proc[NPROC]; p++) {
+      acquire(&p->lock);
+      if(p->state == RUNNABLE && minVtime == p->vtime) {
 
-    p = calc_min_vrunTime();
-    if (p != 0){
-      p->state = RUNNING;
-      c->proc = p;
-      swtch(&c->context, &p->context);
-      c->proc = 0;
+        //printf("the vtime is: %d\t rtimd:%d\t retime:%d\t stime:%d\t \n",p->vtime,p->rtime,p->retime,p->stime);
+        // Switch to chosen process.  It is the process's job
+        // to release its lock and then reacquire it
+        // before jumping back to us.
+        p->state = RUNNING;
+        c->proc = p;
+        swtch(&c->context, &p->context);
+
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
+        c->proc = 0;
+      }
+      release(&p->lock);
     }
   }
 }
@@ -820,17 +829,17 @@ procdump(void)
   }
 }
 
-void get_cfs_priority(int pid,uint64* rtime,uint64* stime,uint64* retime,uint64* cfsPriority)
+void get_cfs_priority(int pid,uint64 rtime,uint64 stime,uint64 retime,uint64 cfsPriority)
 {
     struct proc *p;
 
     for(p = proc; p < &proc[NPROC]; p++){
       acquire(&p->lock);
       if (p->pid == pid){
-        *rtime = p->rtime;
-        *stime = p->stime;
-        *retime = p->retime;
-        *cfsPriority = p->cfs_priority;
+        copyout(p->pagetable,rtime,(char *)&p->rtime,sizeof(int));
+        copyout(p->pagetable,stime,(char *)&p->stime,sizeof(int));
+        copyout(p->pagetable,retime,(char *)&p->retime,sizeof(int));
+        copyout(p->pagetable,cfsPriority,(char *)&p->cfs_priority,sizeof(int));
       }
       release(&p->lock);
     }

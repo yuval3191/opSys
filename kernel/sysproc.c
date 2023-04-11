@@ -61,7 +61,7 @@ sys_get_cfs_priority(void)
   argaddr(2, &stime);
   argaddr(3, &retime);
   argaddr(4, &cfsPriority);
-  get_cfs_priority(pid,&rtime,&stime,&retime,&cfsPriority);
+  get_cfs_priority(pid,rtime,stime,retime,cfsPriority);
   return 0;
 }
 

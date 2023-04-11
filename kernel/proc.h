@@ -106,6 +106,7 @@ struct proc {
   int rtime;
   int stime;
   int retime;
+  int vtime;
   
 /*----------end----------------*/
 
