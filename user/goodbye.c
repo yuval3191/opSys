@@ -5,5 +5,8 @@
 int
 main(int argc, char *argv[])
 {
-    exit(0,"good bye world! i love u all");
+    if (fork() == 0){
+        set_ps_priority(2);
+    }
+    exit(0,"good bye world! i love u all\n");
 }

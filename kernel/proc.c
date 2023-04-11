@@ -6,6 +6,8 @@
 #include "proc.h"
 #include "defs.h"
 
+#define LLONG_MAX __LONG_LONG_MAX__
+
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -28,7 +30,7 @@ struct spinlock wait_lock;
 
 long long calc_min_acc()
 {
-  long long acc = 0;
+  long long acc = LLONG_MAX;
   struct proc *p;
   
   for(p = proc; p < &proc[NPROC]; p++) {
@@ -43,7 +45,10 @@ long long calc_min_acc()
 void init_acc_fields(struct proc *p)
 {
   long long acc = calc_min_acc();
-  p->accumulator = acc;
+  if (acc == LLONG_MAX)
+    p->accumulator = 0;
+  else
+    p->accumulator = acc;
 }
 
 // Allocate a page for each process's kernel stack.
@@ -130,9 +135,6 @@ static struct proc*
 allocproc(void)
 {
   struct proc *p;
-  long long acc;
-
-  acc = calc_min_acc();
 
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
@@ -148,7 +150,7 @@ found:
   p->pid = allocpid();
   p->state = USED;
   
-  p->accumulator = acc;
+  init_acc_fields(p);
   p->ps_priority = NEW_PROCESS_PRIORIEY;
 
   // Allocate a trapframe page.
@@ -195,6 +197,10 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+
+  p->accumulator = 0;
+  p->ps_priority = 0;
+  p->exit_msg[0] = 0;
 }
 
 // Create a user page table for a given process, with no user memory,
@@ -462,7 +468,7 @@ wait(uint64 addr,uint64 cp)
 }
 
 void
-priority_scheduler(void)
+scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
@@ -471,10 +477,10 @@ priority_scheduler(void)
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
-
+    long long acc = calc_min_acc();
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
-      if(p->state == RUNNABLE) {
+      if(p->state == RUNNABLE && p->accumulator == acc) {
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
@@ -499,7 +505,7 @@ priority_scheduler(void)
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
 void
-scheduler(void)
+scheduler_old(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
@@ -512,6 +518,7 @@ scheduler(void)
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
       if(p->state == RUNNABLE) {
+        printf("inside if\n");
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.

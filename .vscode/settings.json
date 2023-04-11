@@ -10,6 +10,17 @@
         "proc.h": "c",
         "cstdlib": "c",
         "spinlock.h": "c",
-        "param.h": "c"
+        "param.h": "c",
+        "climits": "c",
+        "cmath": "c",
+        "compare": "c",
+        "concepts": "c",
+        "cstdarg": "c",
+        "cstdio": "c",
+        "type_traits": "c",
+        "limits": "c",
+        "*.tcc": "c",
+        "cstdint": "c",
+        "typeinfo": "c"
     },
 }

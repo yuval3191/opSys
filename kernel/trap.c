@@ -80,7 +80,7 @@ usertrap(void)
   if(which_dev == 2)
   {
     acquire(&p->lock);
-    p->accumulator += p->ps_priority;
+    p->accumulator = p->accumulator + p->ps_priority;
     release(&p->lock);
     yield();
   }
