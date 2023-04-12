@@ -9,6 +9,7 @@
 #define LLONG_MAX __LONG_LONG_MAX__
 #define INT_MAX __INT16_MAX__
 
+int my_sched_policy = 0;
 
 struct cpu cpus[NCPU];
 
@@ -33,47 +34,46 @@ struct spinlock wait_lock;
 void updateFieldsCFS()
 {
   struct proc *p;
-  
-  printf("entered update\n");
+  int changeFlag;
   for(p = proc; p < &proc[NPROC]; p++) 
   {
-    acquire(&p->lock);
-    if (p->state == RUNNABLE)
+    changeFlag = 0;
+    if (p->state == RUNNABLE){
       p->retime++;
-    else if (p->state == RUNNING)
+      changeFlag = 1;
+    }
+    else if (p->state == RUNNING){
       p->rtime++;
-    else if(p->state == SLEEPING)
+      changeFlag = 1;
+    }
+    else if(p->state == SLEEPING){
       p->stime++;
-    release(&p->lock);
+      changeFlag = 1;
+    }
+    if (changeFlag == 1){
+      p->vtime = (p->cfs_priority * p->rtime) / (p->rtime + p->stime + p->retime);
+      // printf("the vtime has change to: %d\n",p->vtime);
+    }
+
   }
 }
 
-struct proc* calc_min_vrunTime()
+int calc_min_vrunTime()
 {
   int vrunTime = INT_MAX;
-  int curRuntime;
-  int sumOfRun;
   struct proc *p;
-  struct proc *minP = 0;
 
   // printf("enter calc min vrun\n");
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
-    curRuntime = INT_MAX;
-    if(p->state == RUNNABLE ||p->state == RUNNING) {
-      // printf("calc min vrun!!\n");
-      sumOfRun = p->retime + p->rtime + p->stime;
-      // printf("sum of run is:%d\n",sumOfRun);
-      if (sumOfRun != 0)
-        curRuntime = p->cfs_priority * (p->rtime / sumOfRun);
-      if (curRuntime < vrunTime){
-        vrunTime = curRuntime;
-        minP = p;
+    if(p->state == RUNNABLE) {
+      if (p->vtime < vrunTime){
+        vrunTime = p->vtime;
       }
     }
     release(&p->lock);
   }
-  return minP;
+  return vrunTime;
 }
 
 long long calc_min_acc()
@@ -331,6 +331,7 @@ userinit(void)
 
   p->state = RUNNABLE;
   p->cfs_priority = NORMAL_PRIORITY;
+  p->retime = 1;
 
   release(&p->lock);
 }
@@ -498,7 +499,11 @@ wait(uint64 addr,uint64 cp)
             release(&wait_lock);
             return -1;
           }
-          copyout(p->pagetable,cp,pp->exit_msg,strlen(pp->exit_msg));
+          if (cp != 0 && copyout(p->pagetable,cp,pp->exit_msg,strlen(pp->exit_msg)) < 0){
+            release(&pp->lock);
+            release(&wait_lock);
+            return -1;
+          }
           freeproc(pp);
           release(&pp->lock);
           release(&wait_lock);
@@ -520,23 +525,32 @@ wait(uint64 addr,uint64 cp)
 }
 
 void
-scheduler(void)
+scheduler_cfs(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
   
   c->proc = 0;
-  for(;;){
-    // Avoid deadlock by ensuring that devices can interrupt.
-    intr_on();
+  // Avoid deadlock by ensuring that devices can interrupt.
+  intr_on();
+  int minVtime = calc_min_vrunTime();
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if(p->state == RUNNABLE && minVtime == p->vtime) {
 
-    p = calc_min_vrunTime();
-    if (p != 0){
+      //printf("the vtime is: %d\t rtimd:%d\t retime:%d\t stime:%d\t \n",p->vtime,p->rtime,p->retime,p->stime);
+      // Switch to chosen process.  It is the process's job
+      // to release its lock and then reacquire it
+      // before jumping back to us.
       p->state = RUNNING;
       c->proc = p;
       swtch(&c->context, &p->context);
+
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
       c->proc = 0;
     }
+    release(&p->lock);
   }
 }
 
@@ -547,26 +561,24 @@ scheduler_ps(void)
   struct cpu *c = mycpu();
   
   c->proc = 0;
-  for(;;){
-    // Avoid deadlock by ensuring that devices can interrupt.
-    intr_on();
-    long long acc = calc_min_acc();
-    for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      if(p->state == RUNNABLE && p->accumulator == acc) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
+  // Avoid deadlock by ensuring that devices can interrupt.
+  intr_on();
+  long long acc = calc_min_acc();
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if(p->state == RUNNABLE && p->accumulator == acc) {
+      // Switch to chosen process.  It is the process's job
+      // to release its lock and then reacquire it
+      // before jumping back to us.
+      p->state = RUNNING;
+      c->proc = p;
+      swtch(&c->context, &p->context);
 
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-      }
-      release(&p->lock);
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
+      c->proc = 0;
     }
+    release(&p->lock);
   }
 }
 
@@ -584,26 +596,40 @@ scheduler_old(void)
   struct cpu *c = mycpu();
   
   c->proc = 0;
-  for(;;){
-    // Avoid deadlock by ensuring that devices can interrupt.
-    intr_on();
+  // Avoid deadlock by ensuring that devices can interrupt.
+  intr_on();
 
-    for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if(p->state == RUNNABLE) {
+      // Switch to chosen process.  It is the process's job
+      // to release its lock and then reacquire it
+      // before jumping back to us.
+      p->state = RUNNING;
+      c->proc = p;
+      swtch(&c->context, &p->context);
 
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-      }
-      release(&p->lock);
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
+      c->proc = 0;
     }
+    release(&p->lock);
+  }
+}
+
+void
+scheduler(void)
+{
+  struct cpu *c = mycpu();
+  c->proc = 0;
+  for(;;)
+  {
+    if (my_sched_policy == 0)
+      scheduler_old();
+    else if (my_sched_policy == 1)
+      scheduler_ps();
+    else if (my_sched_policy == 2)
+      scheduler_cfs();
   }
 }
 
@@ -820,17 +846,17 @@ procdump(void)
   }
 }
 
-void get_cfs_priority(int pid,uint64* rtime,uint64* stime,uint64* retime,uint64* cfsPriority)
+void get_cfs_priority(int pid,uint64 rtime,uint64 stime,uint64 retime,uint64 cfsPriority)
 {
     struct proc *p;
 
     for(p = proc; p < &proc[NPROC]; p++){
       acquire(&p->lock);
       if (p->pid == pid){
-        *rtime = p->rtime;
-        *stime = p->stime;
-        *retime = p->retime;
-        *cfsPriority = p->cfs_priority;
+        copyout(p->pagetable,rtime,(char *)&p->rtime,sizeof(int));
+        copyout(p->pagetable,stime,(char *)&p->stime,sizeof(int));
+        copyout(p->pagetable,retime,(char *)&p->retime,sizeof(int));
+        copyout(p->pagetable,cfsPriority,(char *)&p->cfs_priority,sizeof(int));
       }
       release(&p->lock);
     }
@@ -865,6 +891,12 @@ int set_cfs_priority(int n)
   }
   release(&p->lock);
   return 0;
-    
+}
 
+int set_policy(int n){
+  if (n <= 2 && n >= 0){
+    my_sched_policy = n;
+    return 0;
+  }
+  return -1;
 }

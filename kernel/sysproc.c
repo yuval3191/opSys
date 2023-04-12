@@ -61,8 +61,16 @@ sys_get_cfs_priority(void)
   argaddr(2, &stime);
   argaddr(3, &retime);
   argaddr(4, &cfsPriority);
-  get_cfs_priority(pid,&rtime,&stime,&retime,&cfsPriority);
+  get_cfs_priority(pid,rtime,stime,retime,cfsPriority);
   return 0;
+}
+
+uint64
+sys_set_policy(void)
+{
+  int n;
+  argint(0, &n);
+  return set_policy(n);
 }
 
 uint64

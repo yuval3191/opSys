@@ -84,9 +84,10 @@ void            printfinit(void);
 // proc.c
 int             cpuid(void);
 void            exit(int,char*);
-void            get_cfs_priority(int,uint64*,uint64*,uint64*,uint64*);
+void            get_cfs_priority(int,uint64,uint64,uint64,uint64);
 void            set_ps_priority(int);
 int             set_cfs_priority(int);
+int             set_policy(int);
 int             fork(void);
 int             growproc(int);
 void            proc_mapstacks(pagetable_t);
@@ -191,3 +192,5 @@ void            virtio_disk_intr(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
+
+

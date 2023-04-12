@@ -6,23 +6,29 @@ int
 main(int argc, char *argv[])
 {
     set_cfs_priority(2);
+    int* rtime  = (int*)malloc(sizeof(int));
+    int* retime = (int*)malloc(sizeof(int));
+    int* stime  = (int*)malloc(sizeof(int));
+    int* pri    = (int*)malloc(sizeof(int));
+    
+
+
     if (fork() == 0){
         set_cfs_priority(0);
+        sleep(20);
     }
     else if (fork() == 0){
         set_cfs_priority(1);
-    }
+        sleep(10);
+    }else
+        sleep(30);
     for (int i = 0; i < 1000000; i++)
     {
         if (i %100000 == 0){
-            sleep(30);
             int pid = getpid();
-            uint64 rtime;
-            uint64 retime;
-            uint64 stime;
-            uint64 pri;
-            get_cfs_priority(pid,&rtime,&retime,&stime,&pri);
-            printf("pid: %d \t rtime: %d \t retime:%d \t stime:%d \t priority:%d \n",pid,rtime,retime,stime,pri);
+            get_cfs_priority(pid,rtime,retime,stime,pri);
+            printf("pid: %d \t rtime: %d \t retime:%d \t stime:%d \t priority:%d \n",pid,*rtime,*retime,*stime,*pri);
+            sleep(30);
         }
     }
     

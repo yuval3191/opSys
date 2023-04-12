@@ -80,7 +80,7 @@ usertrap(void)
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
   {
-    updateFieldsCFS();
+    // updateFieldsCFS();
     acquire(&p->lock);
     p->accumulator = p->accumulator + p->ps_priority;
     release(&p->lock);
@@ -160,7 +160,7 @@ kerneltrap()
   // give up the CPU if this is a timer interrupt.
   if (which_dev == 2 && myproc() != 0 )
   {
-    updateFieldsCFS();
+    // updateFieldsCFS();
     if(myproc()->state == RUNNING){
       struct proc *p = myproc();
       acquire(&p->lock);
@@ -182,7 +182,9 @@ clockintr()
 {
   acquire(&tickslock);
   ticks++;
+  updateFieldsCFS();
   wakeup(&ticks);
+  updateFieldsCFS();
   release(&tickslock);
 }
 

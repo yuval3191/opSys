@@ -5,7 +5,6 @@
 #define NORMAL_PRIORITY 100
 #define LOW_PRIORITY 125
 
-
 struct context {
   uint64 ra;
   uint64 sp;
@@ -106,6 +105,7 @@ struct proc {
   int rtime;
   int stime;
   int retime;
+  int vtime;
   
 /*----------end----------------*/
 
