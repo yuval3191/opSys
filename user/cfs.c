@@ -15,13 +15,13 @@ main(int argc, char *argv[])
 
     if (fork() == 0){
         set_cfs_priority(0);
-        sleep(15);
+        sleep(20);
     }
     else if (fork() == 0){
         set_cfs_priority(1);
-        sleep(40);
+        sleep(10);
     }else
-        sleep(72);
+        sleep(30);
     for (int i = 0; i < 1000000; i++)
     {
         if (i %100000 == 0){

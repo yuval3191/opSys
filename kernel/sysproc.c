@@ -66,6 +66,14 @@ sys_get_cfs_priority(void)
 }
 
 uint64
+sys_set_policy(void)
+{
+  int n;
+  argint(0, &n);
+  return set_policy(n);
+}
+
+uint64
 sys_fork(void)
 {
   return fork();

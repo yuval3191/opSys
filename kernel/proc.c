@@ -9,6 +9,7 @@
 #define LLONG_MAX __LONG_LONG_MAX__
 #define INT_MAX __INT16_MAX__
 
+int my_sched_policy = 0;
 
 struct cpu cpus[NCPU];
 
@@ -50,7 +51,7 @@ void updateFieldsCFS()
       changeFlag = 1;
     }
     if (changeFlag == 1){
-      p->vtime = p->cfs_priority * (p->rtime / (p->rtime + p->stime + p->retime));
+      p->vtime = (p->cfs_priority * p->rtime) / (p->rtime + p->stime + p->retime);
       // printf("the vtime has change to: %d\n",p->vtime);
     }
 
@@ -64,11 +65,13 @@ int calc_min_vrunTime()
 
   // printf("enter calc min vrun\n");
   for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
     if(p->state == RUNNABLE) {
       if (p->vtime < vrunTime){
         vrunTime = p->vtime;
       }
     }
+    release(&p->lock);
   }
   return vrunTime;
 }
@@ -496,7 +499,11 @@ wait(uint64 addr,uint64 cp)
             release(&wait_lock);
             return -1;
           }
-          copyout(p->pagetable,cp,pp->exit_msg,strlen(pp->exit_msg));
+          if (cp != 0 && copyout(p->pagetable,cp,pp->exit_msg,strlen(pp->exit_msg)) < 0){
+            release(&pp->lock);
+            release(&wait_lock);
+            return -1;
+          }
           freeproc(pp);
           release(&pp->lock);
           release(&wait_lock);
@@ -518,34 +525,32 @@ wait(uint64 addr,uint64 cp)
 }
 
 void
-scheduler(void)
+scheduler_cfs(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
   
   c->proc = 0;
-  for(;;){
-    // Avoid deadlock by ensuring that devices can interrupt.
-    intr_on();
-    int minVtime = calc_min_vrunTime();
-    for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      if(p->state == RUNNABLE && minVtime == p->vtime) {
+  // Avoid deadlock by ensuring that devices can interrupt.
+  intr_on();
+  int minVtime = calc_min_vrunTime();
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if(p->state == RUNNABLE && minVtime == p->vtime) {
 
-        //printf("the vtime is: %d\t rtimd:%d\t retime:%d\t stime:%d\t \n",p->vtime,p->rtime,p->retime,p->stime);
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
+      //printf("the vtime is: %d\t rtimd:%d\t retime:%d\t stime:%d\t \n",p->vtime,p->rtime,p->retime,p->stime);
+      // Switch to chosen process.  It is the process's job
+      // to release its lock and then reacquire it
+      // before jumping back to us.
+      p->state = RUNNING;
+      c->proc = p;
+      swtch(&c->context, &p->context);
 
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-      }
-      release(&p->lock);
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
+      c->proc = 0;
     }
+    release(&p->lock);
   }
 }
 
@@ -556,26 +561,24 @@ scheduler_ps(void)
   struct cpu *c = mycpu();
   
   c->proc = 0;
-  for(;;){
-    // Avoid deadlock by ensuring that devices can interrupt.
-    intr_on();
-    long long acc = calc_min_acc();
-    for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      if(p->state == RUNNABLE && p->accumulator == acc) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
+  // Avoid deadlock by ensuring that devices can interrupt.
+  intr_on();
+  long long acc = calc_min_acc();
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if(p->state == RUNNABLE && p->accumulator == acc) {
+      // Switch to chosen process.  It is the process's job
+      // to release its lock and then reacquire it
+      // before jumping back to us.
+      p->state = RUNNING;
+      c->proc = p;
+      swtch(&c->context, &p->context);
 
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-      }
-      release(&p->lock);
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
+      c->proc = 0;
     }
+    release(&p->lock);
   }
 }
 
@@ -593,26 +596,40 @@ scheduler_old(void)
   struct cpu *c = mycpu();
   
   c->proc = 0;
-  for(;;){
-    // Avoid deadlock by ensuring that devices can interrupt.
-    intr_on();
+  // Avoid deadlock by ensuring that devices can interrupt.
+  intr_on();
 
-    for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if(p->state == RUNNABLE) {
+      // Switch to chosen process.  It is the process's job
+      // to release its lock and then reacquire it
+      // before jumping back to us.
+      p->state = RUNNING;
+      c->proc = p;
+      swtch(&c->context, &p->context);
 
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-      }
-      release(&p->lock);
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
+      c->proc = 0;
     }
+    release(&p->lock);
+  }
+}
+
+void
+scheduler(void)
+{
+  struct cpu *c = mycpu();
+  c->proc = 0;
+  for(;;)
+  {
+    if (my_sched_policy == 0)
+      scheduler_old();
+    else if (my_sched_policy == 1)
+      scheduler_ps();
+    else if (my_sched_policy == 2)
+      scheduler_cfs();
   }
 }
 
@@ -874,6 +891,12 @@ int set_cfs_priority(int n)
   }
   release(&p->lock);
   return 0;
-    
+}
 
+int set_policy(int n){
+  if (n <= 2 && n >= 0){
+    my_sched_policy = n;
+    return 0;
+  }
+  return -1;
 }
